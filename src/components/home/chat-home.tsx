@@ -98,6 +98,25 @@ function buildDraftAttachment(file: File): DraftAttachment {
   };
 }
 
+function getViewportMetrics() {
+  if (typeof window === "undefined") {
+    return {
+      height: 0,
+      keyboardInset: 0,
+    };
+  }
+
+  const visualViewport = window.visualViewport;
+  const height = visualViewport
+    ? Math.round(visualViewport.height + visualViewport.offsetTop)
+    : window.innerHeight;
+
+  return {
+    height,
+    keyboardInset: Math.max(0, window.innerHeight - height),
+  };
+}
+
 function toOptimisticAttachment(attachment: DraftAttachment): ChatAttachmentItem {
   return {
     id: attachment.id,
@@ -249,6 +268,10 @@ export function ChatHome({ user }: { user: AuthUser }) {
   const [streamingMessage, setStreamingMessage] =
     useState<ChatMessageItem | null>(null);
   const [composerHeight, setComposerHeight] = useState(176);
+  const [viewportHeight, setViewportHeight] = useState(() =>
+    typeof window === "undefined" ? 0 : getViewportMetrics().height,
+  );
+  const [keyboardInset, setKeyboardInset] = useState(0);
 
   const hasMessages =
     messages.length > 0 || optimisticMessage !== null || streamingMessage !== null;
@@ -279,6 +302,50 @@ export function ChatHome({ user }: { user: AuthUser }) {
   useEffect(() => {
     draftAttachmentsRef.current = draftAttachments;
   }, [draftAttachments]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const visualViewport = window.visualViewport;
+    const updateViewportMetrics = () => {
+      const nextMetrics = getViewportMetrics();
+      setViewportHeight((currentHeight) =>
+        currentHeight === nextMetrics.height ? currentHeight : nextMetrics.height,
+      );
+      setKeyboardInset((currentInset) =>
+        currentInset === nextMetrics.keyboardInset
+          ? currentInset
+          : nextMetrics.keyboardInset,
+      );
+    };
+
+    updateViewportMetrics();
+
+    window.addEventListener("resize", updateViewportMetrics);
+    visualViewport?.addEventListener("resize", updateViewportMetrics);
+    visualViewport?.addEventListener("scroll", updateViewportMetrics);
+
+    return () => {
+      window.removeEventListener("resize", updateViewportMetrics);
+      visualViewport?.removeEventListener("resize", updateViewportMetrics);
+      visualViewport?.removeEventListener("scroll", updateViewportMetrics);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (keyboardInset === 0) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      textareaRef.current?.scrollIntoView({
+        block: "nearest",
+      });
+      scrollConversationToBottom(conversationViewportRef.current, "auto");
+    });
+  }, [keyboardInset]);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -945,6 +1012,18 @@ export function ChatHome({ user }: { user: AuthUser }) {
       : hasMessages
         ? "seguimos daqui"
         : "comecar com leveza";
+  const viewportStyle =
+    viewportHeight > 0
+      ? {
+          minHeight: `${viewportHeight}px`,
+        }
+      : undefined;
+  const appShellStyle =
+    viewportHeight > 0
+      ? {
+          height: `${viewportHeight}px`,
+        }
+      : undefined;
 
   const composer = (
     <div ref={composerRef} className="mx-auto w-full max-w-5xl">
@@ -1080,7 +1159,10 @@ export function ChatHome({ user }: { user: AuthUser }) {
   );
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(255,138,92,0.24),_transparent_24%),radial-gradient(circle_at_bottom_right,_rgba(103,232,198,0.14),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(124,200,255,0.12),_transparent_28%),linear-gradient(140deg,_#07131d_0%,_#0d2430_48%,_#0b1520_100%)] text-white">
+    <main
+      className="min-h-dvh overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(255,138,92,0.24),_transparent_24%),radial-gradient(circle_at_bottom_right,_rgba(103,232,198,0.14),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(124,200,255,0.12),_transparent_28%),linear-gradient(140deg,_#07131d_0%,_#0d2430_48%,_#0b1520_100%)] text-white"
+      style={viewportStyle}
+    >
       <div className="pointer-events-none absolute inset-0 auth-grid opacity-35" />
 
       {isSidebarOpen ? (
@@ -1237,9 +1319,10 @@ export function ChatHome({ user }: { user: AuthUser }) {
       </aside>
 
       <div
-        className={`relative h-screen overflow-hidden transition-[padding] duration-300 ${
+        className={`relative flex min-h-0 flex-col overflow-hidden transition-[padding] duration-300 ${
           isSidebarOpen ? "xl:pl-72" : "xl:pl-0"
         }`}
+        style={appShellStyle}
       >
         <header className="sticky top-0 z-10 border-b border-white/8 bg-[#071925]/34 backdrop-blur">
           <div className="mx-auto flex max-w-6xl items-center gap-4 py-4 pl-20 pr-4 sm:pl-24 sm:pr-6 xl:px-10">
@@ -1256,7 +1339,7 @@ export function ChatHome({ user }: { user: AuthUser }) {
           </div>
         </header>
 
-        <section className="relative flex h-[calc(100vh-73px)] flex-col overflow-hidden">
+        <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {isOpeningThread ? (
             <div className="absolute inset-0 z-20 flex items-center justify-center px-4 py-8 sm:px-6 xl:px-10">
               <div className="absolute inset-0 bg-[#07131d]/72 backdrop-blur-md" />
@@ -1302,7 +1385,9 @@ export function ChatHome({ user }: { user: AuthUser }) {
                 </div>
               </div>
 
-              <div className="shrink-0 pb-6 pt-4">{composer}</div>
+              <div className="shrink-0 px-1 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 sm:px-0">
+                {composer}
+              </div>
             </div>
           ) : (
             <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-4 py-10 text-center sm:px-6 xl:px-10">
