@@ -1,4 +1,3 @@
-import { ChatMessageRole } from "@prisma/client";
 import type { AuthUser } from "@/lib/auth/types";
 import { buildAttachmentOnlyThreadTitle } from "@/lib/chat/attachments";
 import {
@@ -64,7 +63,7 @@ type AttachmentEntity = {
 
 type MessageEntity = {
   id: string;
-  role: ChatMessageRole;
+  role: "USER" | "ASSISTANT";
   contentEncrypted: string;
   createdAt: Date;
   attachments: AttachmentEntity[];
@@ -112,7 +111,7 @@ function toAttachmentItem(attachment: AttachmentEntity): ChatAttachmentItem {
 function toMessageItem(message: MessageEntity) {
   return {
     id: message.id,
-    role: message.role === ChatMessageRole.USER ? "user" : "assistant",
+    role: message.role === "USER" ? "user" : "assistant",
     content: decryptChatText(message.contentEncrypted),
     attachments: message.attachments.map(toAttachmentItem),
     createdAt: message.createdAt.toISOString(),
@@ -292,11 +291,11 @@ async function buildGroqMessages(threadId: string, userName: string) {
 
       return {
         role:
-          message.role === ChatMessageRole.USER
+          message.role === "USER"
             ? ("user" as const)
             : ("assistant" as const),
         content:
-          message.role === ChatMessageRole.USER
+          message.role === "USER"
             ? await buildGroqUserContent(decryptedContent, message.attachments)
             : decryptedContent,
       };
@@ -419,7 +418,7 @@ export async function createUserChatMessage(
       const userMessage = await transaction.chatMessage.create({
         data: {
           threadId: thread.id,
-          role: ChatMessageRole.USER,
+          role: "USER",
           contentEncrypted: encryptChatText(normalizedContent),
           attachments:
             uploadedAttachments.length > 0
@@ -630,7 +629,7 @@ export async function finalizeAssistantReply(
   const assistantMessage = await prisma.chatMessage.create({
     data: {
       threadId,
-      role: ChatMessageRole.ASSISTANT,
+      role: "ASSISTANT",
       contentEncrypted: encryptChatText(assistantReply),
     },
     select: {
