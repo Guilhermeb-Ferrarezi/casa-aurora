@@ -117,6 +117,15 @@ function getViewportMetrics() {
   };
 }
 
+function isComposerFocusableElement(
+  element: EventTarget | null,
+): element is HTMLElement {
+  return (
+    element instanceof HTMLElement &&
+    ["TEXTAREA", "INPUT", "SELECT"].includes(element.tagName)
+  );
+}
+
 function toOptimisticAttachment(attachment: DraftAttachment): ChatAttachmentItem {
   return {
     id: attachment.id,
@@ -243,6 +252,7 @@ export function ChatHome({ user }: { user: AuthUser }) {
   const previousComposerHeightRef = useRef(176);
   const previousThreadIdRef = useRef<string | null>(null);
   const previousIsSendingRef = useRef(false);
+  const composerFocusTimeoutsRef = useRef<number[]>([]);
   const [currentUser, setCurrentUser] = useState(user);
   const [avatarVersion, setAvatarVersion] = useState(() => Date.now());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -309,6 +319,17 @@ export function ChatHome({ user }: { user: AuthUser }) {
     }
 
     const visualViewport = window.visualViewport;
+    const scrollComposerIntoView = (behavior: ScrollBehavior = "smooth") => {
+      composerRef.current?.scrollIntoView({
+        block: "end",
+        behavior,
+      });
+      textareaRef.current?.scrollIntoView({
+        block: "nearest",
+        behavior,
+      });
+      scrollConversationToBottom(conversationViewportRef.current, "auto");
+    };
     const updateViewportMetrics = () => {
       const nextMetrics = getViewportMetrics();
       setViewportHeight((currentHeight) =>
@@ -320,17 +341,47 @@ export function ChatHome({ user }: { user: AuthUser }) {
           : nextMetrics.keyboardInset,
       );
     };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (!isComposerFocusableElement(event.target)) {
+        return;
+      }
+
+      const focusTarget = event.target;
+
+      if (!composerRef.current?.contains(focusTarget)) {
+        return;
+      }
+
+      composerFocusTimeoutsRef.current.forEach((timeoutId) => {
+        window.clearTimeout(timeoutId);
+      });
+      composerFocusTimeoutsRef.current = [];
+
+      scrollComposerIntoView("auto");
+
+      composerFocusTimeoutsRef.current = [120, 280, 460].map((delay) =>
+        window.setTimeout(() => {
+          scrollComposerIntoView("smooth");
+        }, delay),
+      );
+    };
 
     updateViewportMetrics();
 
     window.addEventListener("resize", updateViewportMetrics);
     visualViewport?.addEventListener("resize", updateViewportMetrics);
     visualViewport?.addEventListener("scroll", updateViewportMetrics);
+    document.addEventListener("focusin", handleFocusIn);
 
     return () => {
+      composerFocusTimeoutsRef.current.forEach((timeoutId) => {
+        window.clearTimeout(timeoutId);
+      });
+      composerFocusTimeoutsRef.current = [];
       window.removeEventListener("resize", updateViewportMetrics);
       visualViewport?.removeEventListener("resize", updateViewportMetrics);
       visualViewport?.removeEventListener("scroll", updateViewportMetrics);
+      document.removeEventListener("focusin", handleFocusIn);
     };
   }, []);
 
@@ -340,6 +391,10 @@ export function ChatHome({ user }: { user: AuthUser }) {
     }
 
     requestAnimationFrame(() => {
+      composerRef.current?.scrollIntoView({
+        block: "end",
+        behavior: "auto",
+      });
       textareaRef.current?.scrollIntoView({
         block: "nearest",
       });
@@ -1024,9 +1079,16 @@ export function ChatHome({ user }: { user: AuthUser }) {
           height: `${viewportHeight}px`,
         }
       : undefined;
+  const composerStyle = {
+    scrollMarginBottom: `${Math.max(24, keyboardInset + 24)}px`,
+  };
 
   const composer = (
-    <div ref={composerRef} className="mx-auto w-full max-w-5xl">
+    <div
+      ref={composerRef}
+      className="mx-auto w-full max-w-5xl"
+      style={composerStyle}
+    >
       <form
         onSubmit={handleSubmit}
         className="rounded-[2rem] border border-white/12 bg-[#071925]/58 p-3 shadow-[0_22px_90px_rgba(0,0,0,0.3)] backdrop-blur"
@@ -1160,7 +1222,7 @@ export function ChatHome({ user }: { user: AuthUser }) {
 
   return (
     <main
-      className="min-h-dvh overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(255,138,92,0.24),_transparent_24%),radial-gradient(circle_at_bottom_right,_rgba(103,232,198,0.14),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(124,200,255,0.12),_transparent_28%),linear-gradient(140deg,_#07131d_0%,_#0d2430_48%,_#0b1520_100%)] text-white"
+      className="min-h-dvh overflow-x-hidden overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(255,138,92,0.24),_transparent_24%),radial-gradient(circle_at_bottom_right,_rgba(103,232,198,0.14),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(124,200,255,0.12),_transparent_28%),linear-gradient(140deg,_#07131d_0%,_#0d2430_48%,_#0b1520_100%)] text-white"
       style={viewportStyle}
     >
       <div className="pointer-events-none absolute inset-0 auth-grid opacity-35" />
@@ -1390,7 +1452,7 @@ export function ChatHome({ user }: { user: AuthUser }) {
               </div>
             </div>
           ) : (
-            <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-4 py-10 text-center sm:px-6 xl:px-10">
+            <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-start px-4 py-10 pb-[calc(1rem+env(safe-area-inset-bottom))] text-center sm:px-6 lg:justify-center xl:px-10">
               <div className="flex w-full flex-col items-center gap-8">
                 <div className="space-y-6">
                   <Badge className="border-[#ffd166]/25 bg-[#ffd166]/12 px-3 py-1 text-[10px] uppercase tracking-[0.28em] text-[#fff1cc]">
@@ -1411,7 +1473,9 @@ export function ChatHome({ user }: { user: AuthUser }) {
                   </div>
                 </div>
 
-                <div className="w-full">{composer}</div>
+                <div className="w-full pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                  {composer}
+                </div>
 
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   {suggestionPrompts.map((item) => (

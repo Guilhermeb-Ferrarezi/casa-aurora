@@ -1,7 +1,12 @@
 "use client";
 
 import type { ComponentProps, FormEvent } from "react";
-import { startTransition, useMemo, useState } from "react";
+import {
+  startTransition,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import type { AxiosError } from "axios";
 import {
   CheckCircle,
@@ -79,6 +84,47 @@ const initialPasswordVisibility: Record<PasswordFieldKey, boolean> = {
 const authInputClassName =
   "h-12 rounded-[1.2rem] border-white/12 bg-[#0c2633]/55 px-4 text-lg md:text-lg text-white placeholder:text-[#d7e9f1]/30 focus-visible:border-[#67e8c6]/55 focus-visible:ring-[#67e8c6]/35";
 
+function getViewportMetrics() {
+  if (typeof window === "undefined") {
+    return {
+      height: 0,
+      keyboardInset: 0,
+    };
+  }
+
+  const visualViewport = window.visualViewport;
+  const height = visualViewport
+    ? Math.round(visualViewport.height + visualViewport.offsetTop)
+    : window.innerHeight;
+
+  return {
+    height,
+    keyboardInset: Math.max(0, window.innerHeight - height),
+  };
+}
+
+function scrollFocusedFieldIntoView() {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const activeElement = document.activeElement;
+
+  if (
+    !(activeElement instanceof HTMLElement) ||
+    !["INPUT", "TEXTAREA", "SELECT"].includes(activeElement.tagName)
+  ) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    activeElement.scrollIntoView({
+      block: "center",
+      behavior: "smooth",
+    });
+  });
+}
+
 function getApiError(error: unknown, fallbackMessage: string): FormStatus {
   const axiosError = error as AxiosError<AuthErrorResponse>;
 
@@ -151,6 +197,10 @@ export function AuthPanel({ initialUser }: { initialUser: AuthUser | null }) {
   );
   const [registerForm, setRegisterForm] =
     useState<RegisterFormState>(initialRegisterState);
+  const [viewportHeight, setViewportHeight] = useState(() =>
+    typeof window === "undefined" ? 0 : getViewportMetrics().height,
+  );
+  const [keyboardInset, setKeyboardInset] = useState(0);
 
   const isBusy = activeAction !== null;
   const currentErrors = status?.scope === activeTab ? status.fieldErrors : undefined;
@@ -174,6 +224,47 @@ export function AuthPanel({ initialUser }: { initialUser: AuthUser | null }) {
       [field]: !current[field],
     }));
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const visualViewport = window.visualViewport;
+    const updateViewportMetrics = () => {
+      const nextMetrics = getViewportMetrics();
+      setViewportHeight((currentHeight) =>
+        currentHeight === nextMetrics.height ? currentHeight : nextMetrics.height,
+      );
+      setKeyboardInset((currentInset) =>
+        currentInset === nextMetrics.keyboardInset
+          ? currentInset
+          : nextMetrics.keyboardInset,
+      );
+    };
+
+    updateViewportMetrics();
+
+    window.addEventListener("resize", updateViewportMetrics);
+    visualViewport?.addEventListener("resize", updateViewportMetrics);
+    visualViewport?.addEventListener("scroll", updateViewportMetrics);
+    document.addEventListener("focusin", scrollFocusedFieldIntoView);
+
+    return () => {
+      window.removeEventListener("resize", updateViewportMetrics);
+      visualViewport?.removeEventListener("resize", updateViewportMetrics);
+      visualViewport?.removeEventListener("scroll", updateViewportMetrics);
+      document.removeEventListener("focusin", scrollFocusedFieldIntoView);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (keyboardInset === 0) {
+      return;
+    }
+
+    scrollFocusedFieldIntoView();
+  }, [keyboardInset]);
 
   async function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -244,14 +335,25 @@ export function AuthPanel({ initialUser }: { initialUser: AuthUser | null }) {
     }
   }
 
+  const viewportStyle =
+    viewportHeight > 0
+      ? {
+          minHeight: `${viewportHeight}px`,
+          height: `${viewportHeight}px`,
+        }
+      : undefined;
+
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(255,138,92,0.32),_transparent_26%),radial-gradient(circle_at_top_right,_rgba(103,232,198,0.18),_transparent_30%),linear-gradient(140deg,_#07131d_0%,_#0d2430_48%,_#0b1520_100%)] text-white">
+    <main
+      className="relative min-h-dvh overflow-x-hidden overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(255,138,92,0.32),_transparent_26%),radial-gradient(circle_at_top_right,_rgba(103,232,198,0.18),_transparent_30%),linear-gradient(140deg,_#07131d_0%,_#0d2430_48%,_#0b1520_100%)] text-white"
+      style={viewportStyle}
+    >
       <div className="pointer-events-none absolute inset-0 auth-grid opacity-50" />
       <div className="pointer-events-none absolute -left-24 top-24 size-72 rounded-full bg-[#ff8a5c]/24 blur-3xl animate-drift" />
       <div className="pointer-events-none absolute right-0 top-0 size-80 rounded-full bg-[#ffd166]/18 blur-3xl animate-drift-slow" />
       <div className="pointer-events-none absolute bottom-0 right-1/4 size-96 rounded-full bg-[#67e8c6]/16 blur-3xl animate-drift" />
 
-      <div className="relative mx-auto flex min-h-screen w-full max-w-7xl items-center px-4 py-8 sm:px-6 lg:px-8">
+      <div className="relative mx-auto flex min-h-full w-full max-w-7xl items-start px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-8 sm:pb-[calc(2rem+env(safe-area-inset-bottom))] lg:items-center lg:px-8">
         <div className="grid w-full items-stretch gap-6 lg:grid-cols-[1.15fr_0.85fr]">
           <section className="flex flex-col justify-between rounded-[2rem] border border-white/12 bg-white/8 p-6 shadow-[0_30px_100px_rgba(3,10,20,0.38)] backdrop-blur xl:p-10">
             <div className="space-y-6">

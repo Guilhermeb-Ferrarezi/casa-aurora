@@ -9,7 +9,7 @@ const emailSchema = z
 
 const passwordSchema = z
   .string()
-  .min(8, "A senha precisa ter no minimo 8 caracteres.")
+  .min(6, "A senha precisa ter no minimo 6 caracteres.")
   .max(72, "A senha precisa ter no maximo 72 caracteres.");
 
 export const registerSchema = z
