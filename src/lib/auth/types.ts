@@ -1,15 +1,16 @@
-import type { Prisma } from "@prisma/client";
 import { buildUserAvatarUrl } from "@/lib/auth/avatar";
 
 export const publicUserSelect = {
   id: true,
   name: true,
   email: true,
-} satisfies Prisma.UserSelect;
+} as const;
 
-type PublicUserRecord = Prisma.UserGetPayload<{
-  select: typeof publicUserSelect;
-}>;
+type PublicUserRecord = {
+  id: string;
+  name: string;
+  email: string;
+};
 
 export type AuthUser = PublicUserRecord & {
   avatarUrl: string;
